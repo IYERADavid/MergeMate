@@ -17,7 +17,7 @@ REPLICON_USER_URI = os.getenv("REPLICON_USER_URI")
 
 # TODO move to db or config file
 PROJECT_TO_SLACK = {
-    "murakoze_portal": os.getenv("MY_SLACK_USER_ID") # Currently using my slack ID cuz i don't have permission to send message to my supervisor.
+    "murakoze_portal": [ os.getenv("MY_SLACK_USER_ID"), os.getenv("SUPERVISOR_SLACK_USER_ID") ]
 }
 
 @app.post("/webhook/gitlab")
@@ -28,8 +28,8 @@ async def gitlab_webhook(payload: GitlabWebhookPayload):
         mr = payload.object_attributes
         commits = payload.commits or []
 
-        slack_user = PROJECT_TO_SLACK.get(project_name)
-        if slack_user:
+        slack_users = PROJECT_TO_SLACK.get(project_name)
+        if slack_users:
             # Create a bullet list of commit messages
             commit_messages = "\n".join([f"• {c.message}" for c in (payload.commits or [])])
 
@@ -48,7 +48,7 @@ async def gitlab_webhook(payload: GitlabWebhookPayload):
                 response = await client.post(
                     "https://slack.com/api/conversations.open",
                     headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
-                    json={"users": slack_user}  # replace with actual Slack ID
+                    json={ "users": ",".join(slack_users) }
                 )
                 channel_id = response.json()["channel"]["id"]
 
