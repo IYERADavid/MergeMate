@@ -55,7 +55,6 @@ async def gitlab_webhook(payload: GitlabWebhookPayload):
                 )
 
                 data = response.json()
-                print("Slack response:", data)
                 if not data.get("ok"):
                     return {"status": "failed", "error": data.get("error")}
 
