@@ -4,11 +4,16 @@ import httpx
 import os
 from models import GitlabWebhookPayload
 from dotenv import load_dotenv
+from datetime import date
+
 load_dotenv() 
 
 app = FastAPI()
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+REPLICON_BASE_URL = os.getenv("REPLICON_BASE_URL")
+REPLICON_TOKEN = os.getenv("REPLICON_TOKEN")
+REPLICON_USER_URI = os.getenv("REPLICON_USER_URI")
 
 # TODO move to db or config file
 PROJECT_TO_SLACK = {
@@ -58,7 +63,50 @@ async def gitlab_webhook(payload: GitlabWebhookPayload):
                 if not data.get("ok"):
                     return {"status": "failed", "error": data.get("error")}
 
-        # TODO auto fillout replicon timesheet
+        # Log time in Replicon
+
+        # Get or create timesheet for today
+        today = date.today()
+        timesheet_payload = {
+            "userUri": REPLICON_USER_URI,
+            "date": {"year": today.year, "month": today.month, "day": today.day},
+            "timesheetGetOptionUri": "urn:replicon:timesheet-get-option:create-timesheet-if-necessary"
+        }
+
+        async with httpx.AsyncClient() as client:
+            ts_resp = await client.post(
+                f"{REPLICON_BASE_URL}/timesheet/get-timesheet",
+                headers={"Authorization": f"Bearer {REPLICON_TOKEN}"},
+                json=timesheet_payload
+            )
+            ts_data = ts_resp.json()
+            timesheet_uri = ts_data.get("timesheet", {}).get("uri")
+            if not timesheet_uri:
+                raise Exception("Failed to retrieve or create timesheet")
+
+            # Distribute hours across commits
+            if not commits:
+                return
+
+            total_hours = 8.0  # Total hours to log per MR in replicon
+            hours_per_commit = total_hours / len(commits)
+
+            # Fill timesheet
+            for commit in commits:
+                entry_payload = {
+                    "timesheetUri": timesheet_uri,
+                    "timeEntry": {
+                        "date": {"year": today.year, "month": today.month, "day": today.day},
+                        "hours": hours_per_commit,
+                        "comments": commit.message
+                    }
+                }
+                entry_resp = await client.post(
+                    f"{REPLICON_BASE_URL}/timesheet/save-time-entry",
+                    headers={"Authorization": f"Bearer {REPLICON_TOKEN}"},
+                    json=entry_payload
+                )
+                print(entry_resp.json())
 
     return {"status": "ok"}
 
