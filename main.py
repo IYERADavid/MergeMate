@@ -17,7 +17,8 @@ REPLICON_USER_URI = os.getenv("REPLICON_USER_URI")
 
 # TODO move to db or config file
 PROJECT_TO_SLACK = {
-    "murakoze_portal": [ os.getenv("MY_SLACK_USER_ID"), os.getenv("SUPERVISOR_SLACK_USER_ID") ]
+    "MURAKOZE_PORTAL": [ os.getenv("MY_SLACK_USER_ID"), os.getenv("MURAKOZE_SUPERVISOR_SLACK_USER_ID") ],
+    "AMATEGEKO_API": [ os.getenv("MY_SLACK_USER_ID"), os.getenv("AMATEGEKO_SUPERVISOR_SLACK_USER_ID") ],
 }
 
 @app.post("/webhook/gitlab")
