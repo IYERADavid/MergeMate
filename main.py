@@ -3,23 +3,10 @@ import uvicorn
 import httpx
 import os
 from models import GitlabWebhookPayload
-from dotenv import load_dotenv
+from config import PROJECT_TO_SLACK, SLACK_BOT_TOKEN, REPLICON_BASE_URL, REPLICON_TOKEN, REPLICON_USER_URI
 from datetime import date
 
-load_dotenv() 
-
 app = FastAPI()
-
-SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
-REPLICON_BASE_URL = os.getenv("REPLICON_BASE_URL")
-REPLICON_TOKEN = os.getenv("REPLICON_TOKEN")
-REPLICON_USER_URI = os.getenv("REPLICON_USER_URI")
-
-# TODO move to db or config file
-PROJECT_TO_SLACK = {
-    "MURAKOZE_PORTAL": [ os.getenv("MY_SLACK_USER_ID"), os.getenv("MURAKOZE_SUPERVISOR_SLACK_USER_ID") ],
-    "AMATEGEKO_API": [ os.getenv("MY_SLACK_USER_ID"), os.getenv("AMATEGEKO_SUPERVISOR_SLACK_USER_ID") ],
-}
 
 @app.post("/webhook/gitlab")
 async def gitlab_webhook(payload: GitlabWebhookPayload):
