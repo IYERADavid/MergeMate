@@ -43,26 +43,28 @@ async def gitlab_webhook(payload: GitlabWebhookPayload):
                 f"*Commit Messages:*\n{commit_messages if commit_messages else 'No commits'}"
             )
 
-            async with httpx.AsyncClient() as client:
+            for user in slack_users:
 
-                # Opening a conversation with the user
-                response = await client.post(
-                    "https://slack.com/api/conversations.open",
-                    headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
-                    json={ "users": ",".join(slack_users) }
-                )
-                channel_id = response.json()["channel"]["id"]
+                async with httpx.AsyncClient() as client:
 
-                # Send the message
-                response = await client.post(
-                    "https://slack.com/api/chat.postMessage",
-                    headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
-                    json={"channel": channel_id, "text": msg}
-                )
+                    # Opening a conversation with the user
+                    response = await client.post(
+                        "https://slack.com/api/conversations.open",
+                        headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+                        json={ "users": user }
+                    )
+                    channel_id = response.json()["channel"]["id"]
 
-                data = response.json()
-                if not data.get("ok"):
-                    return {"status": "failed", "error": data.get("error")}
+                    # Send the message
+                    response = await client.post(
+                        "https://slack.com/api/chat.postMessage",
+                        headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+                        json={"channel": channel_id, "text": msg}
+                    )
+
+                    data = response.json()
+                    if not data.get("ok"):
+                        return {"status": "failed", "error": data.get("error")}
 
         # Log time in Replicon
 
@@ -80,6 +82,10 @@ async def gitlab_webhook(payload: GitlabWebhookPayload):
                 headers={"Authorization": f"Bearer {REPLICON_TOKEN}"},
                 json=timesheet_payload
             )
+
+            if not ts_resp.is_success:
+                raise Exception(f"Failed to get or create timesheet: {ts_resp.text}")
+
             ts_data = ts_resp.json()
             timesheet_uri = ts_data.get("timesheet", {}).get("uri")
             if not timesheet_uri:
@@ -107,6 +113,10 @@ async def gitlab_webhook(payload: GitlabWebhookPayload):
                     headers={"Authorization": f"Bearer {REPLICON_TOKEN}"},
                     json=entry_payload
                 )
+
+                if not entry_resp.is_success:
+                    raise Exception(f"Failed to save time entry: {entry_resp.text}")
+
                 print(entry_resp.json())
 
     return {"status": "ok"}
