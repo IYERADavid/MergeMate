@@ -17,3 +17,8 @@ class GitlabWebhookPayload(BaseModel):
     project: Project
     object_attributes: MergeRequestAttributes
     commits: Optional[List[Commit]] = []
+
+class APIResponse(BaseModel):
+    status: str
+    message: Optional[str] = None
+    error: Optional[str] = None

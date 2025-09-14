@@ -5,7 +5,7 @@ import logging
 from datetime import date
 from typing import Any, Dict, List
 
-from models import GitlabWebhookPayload
+from models import GitlabWebhookPayload, APIResponse
 from config import (
     PROJECT_TO_SLACK,
     SLACK_BOT_TOKEN,
@@ -116,10 +116,10 @@ async def log_time_in_replicon(commits: List[Any]) -> None:
 
 
 # Main Endpoint
-@app.post("/webhook/gitlab")
+@app.post("/webhook/gitlab", response_model=APIResponse)
 async def gitlab_webhook(payload: GitlabWebhookPayload) -> Dict[str, Any]:
     if payload.object_kind != "merge_request":
-        return {"status": "ignored", "reason": "not a merge_request"}
+        return APIResponse(status="ignored", message="Not a merge_request")
 
     project_name = payload.project.name
     mr = payload.object_attributes
@@ -131,7 +131,7 @@ async def gitlab_webhook(payload: GitlabWebhookPayload) -> Dict[str, Any]:
 
     await log_time_in_replicon(commits)
 
-    return {"status": "ok"}
+    return APIResponse(status="ok", message="Webhook processed successfully")
 
 
 if __name__ == "__main__":
