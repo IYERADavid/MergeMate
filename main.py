@@ -3,7 +3,7 @@ import uvicorn
 import httpx
 import logging
 from datetime import date
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from models import GitlabWebhookPayload
 from config import (
@@ -25,58 +25,49 @@ TOTAL_HOURS_PER_MR = 8.0
 SLACK_API_BASE = "https://slack.com/api"
 
 
-@app.post("/webhook/gitlab")
-async def gitlab_webhook(payload: GitlabWebhookPayload) -> Dict[str, Any]:
-    if payload.object_kind != "merge_request":
-        return {"status": "ignored", "reason": "not a merge_request"}
+# Slack Helper Function
+async def send_slack_notifications(project_name: str, mr: Any, commits: List[Any], slack_users: List[str]) -> None:
+    """Send merge request alerts to Slack users."""
+    commit_messages = "\n".join([f"• {c.message}" for c in commits])
+    msg = (
+        f"*New Merge Request Alert*\n"
+        f"*Project:* {project_name}\n"
+        f"*Title:* {mr.title}\n"
+        f"*URL:* <{mr.url}|Click to open>\n"
+        f"*Commits:* {len(commits)}\n"
+        f"*Commit Messages:*\n{commit_messages if commit_messages else 'No commits'}"
+    )
 
-    project_name = payload.project.name
-    mr = payload.object_attributes
-    commits = payload.commits or []
+    headers = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}"}
 
-    slack_users = PROJECT_TO_SLACK.get(project_name)
-    if slack_users:
-        commit_messages = "\n".join([f"• {c.message}" for c in commits])
-        msg = (
-            f"*New Merge Request Alert*\n"
-            f"*Project:* {project_name or payload.project.id}\n"
-            f"*Title:* {mr.title}\n"
-            f"*URL:* <{mr.url}|Click to open>\n"
-            f"*Commits:* {len(commits)}\n"
-            f"*Commit Messages:*\n{commit_messages if commit_messages else 'No commits'}"
-        )
+    async with httpx.AsyncClient() as client:
+        for user in slack_users:
+            try:
+                response = await client.post(
+                    f"{SLACK_API_BASE}/conversations.open",
+                    headers=headers,
+                    json={"users": user},
+                )
+                channel_id = response.json().get("channel", {}).get("id")
+                if not channel_id:
+                    logger.error("Failed to open Slack conversation: %s", response.text)
+                    continue
 
-        headers = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}"}
+                response = await client.post(
+                    f"{SLACK_API_BASE}/chat.postMessage",
+                    headers=headers,
+                    json={"channel": channel_id, "text": msg},
+                )
+                data = response.json()
+                if not data.get("ok"):
+                    logger.error("Slack error: %s", data.get("error"))
+            except Exception:
+                logger.exception("Slack notification failed")
 
-        async with httpx.AsyncClient() as client:
-            for user in slack_users:
-                try:
-                    # Open conversation
-                    response = await client.post(
-                        f"{SLACK_API_BASE}/conversations.open",
-                        headers=headers,
-                        json={"users": user},
-                    )
-                    channel_id = response.json().get("channel", {}).get("id")
-                    if not channel_id:
-                        logger.error("Failed to open conversation: %s", response.text)
-                        continue
 
-                    # Send message
-                    response = await client.post(
-                        f"{SLACK_API_BASE}/chat.postMessage",
-                        headers=headers,
-                        json={"channel": channel_id, "text": msg},
-                    )
-                    data = response.json()
-                    if not data.get("ok"):
-                        logger.error("Slack error: %s", data.get("error"))
-                        return {"status": "failed", "error": data.get("error")}
-                except Exception as e:
-                    logger.exception("Slack notification failed")
-                    return {"status": "failed", "error": str(e)}
-
-    # Log time in Replicon
+# Replicon Helper Function
+async def log_time_in_replicon(commits: List[Any]) -> None:
+    """Log commit work into Replicon timesheet."""
     today = date.today()
     timesheet_payload = {
         "userUri": REPLICON_USER_URI,
@@ -122,6 +113,23 @@ async def gitlab_webhook(payload: GitlabWebhookPayload) -> Dict[str, Any]:
                     raise HTTPException(status_code=500, detail="Time entry save failed")
 
                 logger.info("Time entry saved: %s", entry_resp.json())
+
+
+# Main Endpoint
+@app.post("/webhook/gitlab")
+async def gitlab_webhook(payload: GitlabWebhookPayload) -> Dict[str, Any]:
+    if payload.object_kind != "merge_request":
+        return {"status": "ignored", "reason": "not a merge_request"}
+
+    project_name = payload.project.name
+    mr = payload.object_attributes
+    commits = payload.commits or []
+
+    slack_users = PROJECT_TO_SLACK.get(project_name)
+    if slack_users:
+        await send_slack_notifications(project_name, mr, commits, slack_users)
+
+    await log_time_in_replicon(commits)
 
     return {"status": "ok"}
 
